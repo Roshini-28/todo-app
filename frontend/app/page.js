@@ -293,15 +293,21 @@ export default function Home() {
   };
 
   const handleReorder = async (taskIds) => {
+    // Store previous state for rollback
+    const previousTasks = [...tasks];
+
+    // Optimistic update
+    setTasks((prevTasks) => {
+      const taskMap = new Map(prevTasks.map((t) => [t.id, t]));
+      return taskIds.map((id) => taskMap.get(id)).filter(Boolean);
+    });
+
     try {
       await reorderTasks(taskIds);
-      // Update local state to reflect the new order immediately
-      setTasks((prevTasks) => {
-        const taskMap = new Map(prevTasks.map((t) => [t.id, t]));
-        return taskIds.map((id) => taskMap.get(id)).filter(Boolean);
-      });
     } catch (err) {
-      setError(err.message);
+      // Rollback on failure
+      setTasks(previousTasks);
+      setError(err.message || "Failed to reorder tasks");
     }
   };
 

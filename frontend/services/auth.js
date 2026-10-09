@@ -2,7 +2,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 async function fetchAuth(endpoint, options = {}) {
   try {
-    const token = localStorage.getItem("token");
+    // Use sessionStorage so authentication only lasts for the current tab session.
+    // When the user opens a new tab, they will be asked to log in again.
+    const token = sessionStorage.getItem("token");
 
     const response = await fetch(`${API_URL}${endpoint}`, {
       ...options,
@@ -45,16 +47,17 @@ export async function login(username, password) {
   });
 
   if (data.access_token) {
-    localStorage.setItem("token", data.access_token);
-    localStorage.setItem("user", JSON.stringify(data.user));
+    // Store token in sessionStorage so it only lasts for the current tab session.
+    sessionStorage.setItem("token", data.access_token);
+    sessionStorage.setItem("user", JSON.stringify(data.user));
   }
 
   return data;
 }
 
 export async function logout() {
-  localStorage.removeItem("token");
-  localStorage.removeItem("user");
+  sessionStorage.removeItem("token");
+  sessionStorage.removeItem("user");
 }
 
 export async function getCurrentUser() {
@@ -62,10 +65,10 @@ export async function getCurrentUser() {
 }
 
 export function isAuthenticated() {
-  return !!localStorage.getItem("token");
+  return !!sessionStorage.getItem("token");
 }
 
 export function getUser() {
-  const user = localStorage.getItem("user");
+  const user = sessionStorage.getItem("user");
   return user ? JSON.parse(user) : null;
 }

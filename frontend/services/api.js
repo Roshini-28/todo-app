@@ -2,7 +2,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 async function fetchAPI(endpoint, options = {}) {
   try {
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem("token");
 
     const response = await fetch(`${API_URL}${endpoint}`, {
       headers: {
@@ -120,7 +120,14 @@ export async function deletePage(pageId) {
 
 // AI API functions
 export async function getAIStatus() {
-  return fetchAPI("/ai/status");
+  return fetchAPI("/ai/health");
+}
+
+export async function chatWithAI(message, provider = null) {
+  return fetchAPI("/ai/chat", {
+    method: "POST",
+    body: JSON.stringify({ message, provider }),
+  });
 }
 
 export async function suggestTasks(prompt) {

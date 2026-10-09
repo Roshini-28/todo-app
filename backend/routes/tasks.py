@@ -41,6 +41,23 @@ def create_task(task: TaskCreate, current_user: dict = Depends(get_current_user)
     return created
 
 
+@router.put("/reorder")
+def reorder_tasks(reorder_data: TaskReorder, current_user: dict = Depends(get_current_user)):
+    """Update the order of tasks (for drag and drop)."""
+    result = task_service.update_task_order(reorder_data.task_ids)
+
+    if not result["success"]:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Some tasks could not be updated: {', '.join(result['errors'])}"
+        )
+
+    return {
+        "message": f"Tasks reordered successfully ({result['updated']} updated)",
+        "updated": result["updated"],
+    }
+
+
 @router.put("/{task_id}", response_model=TaskResponse)
 def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depends(get_current_user)):
     """Update an existing task."""
@@ -89,10 +106,3 @@ def clear_completed_tasks(page: str = Query(default=None), current_user: dict = 
     """Delete all completed tasks, optionally filtered by page."""
     count = task_service.clear_completed_tasks(page=page)
     return {"message": f"Cleared {count} completed task(s)"}
-
-
-@router.put("/reorder")
-def reorder_tasks(reorder_data: TaskReorder, current_user: dict = Depends(get_current_user)):
-    """Update the order of tasks (for drag and drop)."""
-    task_service.update_task_order(reorder_data.task_ids)
-    return {"message": "Tasks reordered successfully"}

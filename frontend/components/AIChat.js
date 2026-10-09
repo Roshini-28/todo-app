@@ -1,69 +1,77 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { getAIStatus, suggestTasks } from "../services/api";
+import { chatWithAI, getAIStatus } from "../services/api";
 
-export default function AIChat({ isOpen, onClose, onCreateTasks, defaultPage }) {
-  const [prompt, setPrompt] = useState("");
+export default function AIChat({ isOpen, onClose }) {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [suggestions, setSuggestions] = useState([]);
-  const [aiConfigured, setAiConfigured] = useState(null);
-  const [creating, setCreating] = useState(false);
+  const [aiStatus, setAiStatus] = useState(null);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
       checkAIStatus();
-      setSuggestions([]);
+      setMessages([{
+        role: "assistant",
+        content: "Hello! I'm your AI assistant. I can help you with:\n\n• Summarizing your tasks\n• Suggesting priorities\n• Daily planning\n• Answering questions about your tasks\n\nWhat would you like help with?",
+      }]);
       setError("");
-      setPrompt("");
+      setInput("");
     }
   }, [isOpen]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [suggestions]);
+  }, [messages]);
 
   const checkAIStatus = async () => {
     try {
       const status = await getAIStatus();
-      setAiConfigured(status.configured);
+      setAiStatus(status);
     } catch {
-      setAiConfigured(false);
+      setAiStatus({ configured: false });
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!prompt.trim()) return;
+  const handleSend = async () => {
+    if (!input.trim() || loading) return;
 
+    const userMessage = { role: "user", content: input.trim() };
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
     setLoading(true);
     setError("");
-    setSuggestions([]);
 
     try {
-      const response = await suggestTasks(prompt.trim());
-      setSuggestions(response.suggestions);
+      // Don't send provider - let backend use DEFAULT_AI_PROVIDER from .env
+      const response = await chatWithAI(input.trim());
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: response.answer,
+      }]);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "Failed to get AI response");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCreateTasks = async () => {
-    if (suggestions.length === 0) return;
+  const handleKeyPress = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
 
-    setCreating(true);
-    try {
-      await onCreateTasks(suggestions, defaultPage);
-      setSuggestions([]);
-      setPrompt("");
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setCreating(false);
+  const handleRetry = () => {
+    const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
+    if (lastUserMessage) {
+      setInput(lastUserMessage.content);
+      setMessages((prev) => prev.slice(0, -1));
+      handleSend();
     }
   };
 
@@ -72,20 +80,23 @@ export default function AIChat({ isOpen, onClose, onCreateTasks, defaultPage }) 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col max-h-[80vh]">
+      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col max-h-[85vh]">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <h2 className="text-lg font-semibold text-gray-800">AI Assistant</h2>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800">AI Assistant</h2>
+              <p className="text-xs text-gray-500">Powered by cloud AI</p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -93,66 +104,47 @@ export default function AIChat({ isOpen, onClose, onCreateTasks, defaultPage }) 
           </button>
         </div>
 
-        {/* Status */}
-        {aiConfigured === false && (
-          <div className="mx-4 mt-3 p-3 bg-warning/10 border border-warning/20 rounded-lg">
-            <p className="text-sm text-warning">
-              AI is not configured. Set <code className="bg-gray-100 px-1 rounded">OPENAI_API_KEY</code> in your backend <code className="bg-gray-100 px-1 rounded">.env</code> file.
-            </p>
-          </div>
-        )}
-
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Welcome message */}
-          <div className="bg-gray-50 rounded-xl p-4">
-            <p className="text-sm text-gray-600">
-              Hi! I'm your AI assistant. Tell me what you need to accomplish, and I'll suggest tasks for you.
-            </p>
-            <p className="text-xs text-gray-400 mt-2">
-              Example: "I need to prepare for my Java interview"
-            </p>
-          </div>
-
-          {/* Loading */}
-          {loading && (
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-              AI is thinking...
-            </div>
-          )}
-
-          {/* Error */}
-          {error && (
-            <div className="bg-danger-light text-danger text-sm p-3 rounded-lg">
-              {error}
-            </div>
-          )}
-
-          {/* Suggestions */}
-          {suggestions.length > 0 && (
-            <div className="space-y-3">
-              <p className="text-sm font-medium text-gray-700">Here are some suggested tasks:</p>
-              <div className="space-y-2">
-                {suggestions.map((suggestion, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center gap-2 p-3 bg-primary-light/50 border border-primary/20 rounded-lg"
-                  >
-                    <span className="w-5 h-5 bg-primary text-white text-xs rounded-full flex items-center justify-center flex-shrink-0">
-                      {index + 1}
-                    </span>
-                    <span className="text-sm text-gray-700">{suggestion}</span>
-                  </div>
-                ))}
-              </div>
-              <button
-                onClick={handleCreateTasks}
-                disabled={creating}
-                className="w-full px-4 py-2.5 text-sm text-white bg-primary hover:bg-primary-hover rounded-lg disabled:opacity-50 transition-colors"
+          {messages.map((msg, idx) => (
+            <div
+              key={idx}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                  msg.role === "user"
+                    ? "bg-indigo-600 text-white"
+                    : "bg-gray-100 text-gray-800"
+                }`}
               >
-                {creating ? "Creating tasks..." : `Create ${suggestions.length} Suggested Task${suggestions.length > 1 ? "s" : ""}`}
-              </button>
+                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+              </div>
+            </div>
+          ))}
+
+          {loading && (
+            <div className="flex justify-start">
+              <div className="bg-gray-100 rounded-2xl px-4 py-3">
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                  AI is thinking...
+                </div>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="flex justify-center">
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 max-w-md">
+                <p className="text-sm text-red-600">{error}</p>
+                <button
+                  onClick={handleRetry}
+                  className="mt-2 text-xs text-red-700 hover:text-red-800 font-medium"
+                >
+                  Retry
+                </button>
+              </div>
             </div>
           )}
 
@@ -160,25 +152,35 @@ export default function AIChat({ isOpen, onClose, onCreateTasks, defaultPage }) 
         </div>
 
         {/* Input */}
-        <form onSubmit={handleSubmit} className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-gray-200">
           <div className="flex gap-2">
-            <input
-              type="text"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="What do you need to do?"
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary text-sm"
-              disabled={loading || !aiConfigured}
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyPress}
+              placeholder="Ask about your tasks... (e.g., 'Summarize my pending tasks')"
+              rows={2}
+              disabled={loading}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 text-sm resize-none"
             />
             <button
-              type="submit"
-              disabled={loading || !prompt.trim() || !aiConfigured}
-              className="px-4 py-2 text-sm text-white bg-primary hover:bg-primary-hover rounded-lg disabled:opacity-50 transition-colors"
+              onClick={handleSend}
+              disabled={loading || !input.trim()}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors self-end"
             >
-              {loading ? "..." : "Ask"}
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              )}
             </button>
           </div>
-        </form>
+          <p className="text-xs text-gray-400 mt-1">
+            Press Enter to send, Shift+Enter for new line
+          </p>
+        </div>
       </div>
     </div>
   );

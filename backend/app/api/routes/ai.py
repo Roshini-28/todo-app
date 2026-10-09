@@ -1,75 +1,102 @@
 """AI chat API routes."""
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from app.agents.todo_agent import create_todo_agent, chat_with_agent
-from app.ai.providers import get_available_providers
-from app.config.settings import settings
+from app.services import ai_service
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 
 
 class AIChatRequest(BaseModel):
     """Request model for AI chat."""
-    message: str = Field(..., min_length=1, description="User's message")
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=4000,
+        description="User's message"
+    )
+    provider: str | None = Field(
+        default=None,
+        description="AI provider (ollama_cloud, nvidia, gemini). Uses default if not specified."
+    )
 
 
 class AIChatResponse(BaseModel):
     """Response model for AI chat."""
-    response: str
+    answer: str
     provider: str
     model: str
 
 
-# Store agent instance (created once, reused for all requests)
-_agent = None
+# Legacy models (kept for backward compatibility)
+class AISuggestRequest(BaseModel):
+    """Request model for AI task suggestions."""
+    prompt: str = Field(..., min_length=1, description="User's prompt for task suggestions")
 
 
-def get_agent():
-    """Get or create the AI agent."""
-    global _agent
-    if _agent is None:
-        _agent = create_todo_agent(settings.DEFAULT_LLM)
-    return _agent
+class AISuggestResponse(BaseModel):
+    """Response model for AI task suggestions."""
+    suggestions: list[str]
+    provider: str | None = None
+    model: str | None = None
 
 
 @router.post("/chat", response_model=AIChatResponse)
 async def chat(request: AIChatRequest):
-    """Chat with the AI agent.
+    """Chat with the AI assistant.
 
-    The agent can:
-    - Create tasks
-    - List tasks
-    - Update tasks
-    - Complete/uncomplete tasks
-    - Delete tasks
-    - Summarize tasks
+    The AI can help with:
+    - Summarizing tasks
+    - Suggesting priorities
+    - Daily planning
+    - Answering questions about tasks
     """
     try:
-        agent = get_agent()
-        response = chat_with_agent(agent, request.message)
+        result = ai_service.generate_response(
+            messages=[{"role": "user", "content": request.message}],
+            provider=request.provider,
+            max_tokens=2048,
+        )
 
         return AIChatResponse(
-            response=response,
-            provider="ollama",
-            model="llama3.2:3b",
+            answer=result["answer"],
+            provider=result["provider"],
+            model=result["model"],
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         error_msg = str(e)
-        if "ollama" in error_msg.lower() or "connection" in error_msg.lower():
-            raise HTTPException(
-                status_code=503,
-                detail="Ollama is not available. Please start Ollama and try again."
-            )
-        raise HTTPException(status_code=500, detail=f"AI error: {error_msg}")
+        if "rate" in error_msg.lower() or "quota" in error_msg.lower():
+            raise HTTPException(status_code=429, detail="AI provider rate limit exceeded. Please try again later.")
+        raise HTTPException(status_code=502, detail=f"AI provider error: {error_msg}")
+
+
+@router.post("/suggest-tasks", response_model=AISuggestResponse)
+async def suggest_tasks(request: AISuggestRequest):
+    """Get AI-powered task suggestions based on a prompt."""
+    try:
+        result = ai_service.suggest_tasks(request.prompt)
+        return AISuggestResponse(
+            suggestions=result["suggestions"],
+            provider=result["provider"],
+            model=result["model"],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        error_msg = str(e)
+        if "rate" in error_msg.lower() or "quota" in error_msg.lower():
+            raise HTTPException(status_code=429, detail="AI provider rate limit exceeded. Please try again later.")
+        raise HTTPException(status_code=502, detail=f"AI provider error: {error_msg}")
 
 
 @router.get("/health")
 def ai_health():
     """Check if AI is configured and available."""
-    providers = get_available_providers()
+    providers = ai_service.get_available_providers()
     return {
         "configured": len(providers) > 0,
         "providers": providers,
-        "default_provider": "ollama",
-        "message": "AI is ready" if providers else "AI is not configured",
+        "default_provider": ai_service.settings.DEFAULT_AI_PROVIDER,
+        "message": "AI is ready" if providers else "AI is not configured. Please set provider API keys in .env",
     }

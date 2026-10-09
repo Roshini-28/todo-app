@@ -1,6 +1,6 @@
 "use client";
 
-export default function TodoItem({ task, onComplete, onUncomplete, onEdit, onDelete, loading, draggable, onDragStart, onDragOver, onDrop, isDragging }) {
+export default function TodoItem({ task, onComplete, onUncomplete, onEdit, onDelete, loading, draggable, onDragStart, onDragOver, onDrop, onDragEnd, isDragging }) {
   const isCompleted = task.status === "Completed";
 
   const formatDate = (dateString) => {
@@ -48,6 +48,7 @@ export default function TodoItem({ task, onComplete, onUncomplete, onEdit, onDel
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
+      onDragEnd={onDragEnd}
       className={`
         bg-white rounded-xl border p-4 transition-all hover:shadow-md
         ${isCompleted ? "border-green-200 bg-green-50/20" : "border-gray-200"}

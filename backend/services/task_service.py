@@ -138,21 +138,41 @@ def update_task(task_id, title=None, description=None, page=None, priority=None,
 
 
 def update_task_order(task_ids):
-    """Update the order of multiple tasks."""
+    """Update the order of multiple tasks.
+
+    Args:
+        task_ids: List of task ID strings in the desired order.
+
+    Returns:
+        dict: {'success': bool, 'updated': int, 'errors': list}
+    """
     collection = get_tasks_collection()
     now = datetime.utcnow()
+    errors = []
+    updated = 0
 
     for index, task_id in enumerate(task_ids):
         try:
             obj_id = ObjectId(task_id)
-            collection.update_one(
-                {"_id": obj_id},
-                {"$set": {"order": index + 1, "updated_at": now}}
-            )
         except (InvalidId, TypeError):
+            errors.append(f"Invalid task ID: {task_id}")
             continue
 
-    return True
+        result = collection.update_one(
+            {"_id": obj_id},
+            {"$set": {"order": index + 1, "updated_at": now}}
+        )
+
+        if result.matched_count == 0:
+            errors.append(f"Task not found: {task_id}")
+        else:
+            updated += 1
+
+    return {
+        "success": len(errors) == 0,
+        "updated": updated,
+        "errors": errors,
+    }
 
 
 def complete_task(task_id):
